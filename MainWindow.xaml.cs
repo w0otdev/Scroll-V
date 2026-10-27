@@ -1,5 +1,6 @@
-﻿using ScrollV.Core;
+using ScrollV.Core;
 using System;
+using System.Diagnostics;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -9,125 +10,102 @@ namespace ScrollV
 {
     public partial class MainWindow : Window
     {
-        private ScrollVManager? _manager;
-        private bool _isRunning = true;
-        private LocalizationManager _loc = LocalizationManager.Instance;
-        private SmoothScrollBehavior? _smoothScroll;
+        private readonly ScrollVManager _manager;
+        private readonly LocalizationManager _loc = LocalizationManager.Instance;
+        private readonly SmoothScrollBehavior _smoothScroll;
+        private bool _isLoading;
 
-        public MainWindow()
+        public MainWindow() : this(((App)Application.Current).GetManager() ?? new ScrollVManager())
         {
-            InitializeComponent();
-            Loaded += MainWindow_Loaded;
-            
-            // Initialize smooth scrolling for the menu
-            _smoothScroll = SmoothScrollBehavior.Attach(ContentScrollViewer);
         }
 
-        private void MainWindow_Loaded(object sender, RoutedEventArgs e)
+        public MainWindow(ScrollVManager manager)
         {
-            // Get or create manager
-            _manager = ((App)Application.Current).GetManager();
-            if (_manager == null)
-            {
-                _manager = new ScrollVManager();
-            }
+            _manager = manager;
+            _isLoading = true;
 
-            // Load settings
-            LoadSettings();
+            InitializeComponent();
+            _smoothScroll = SmoothScrollBehavior.Attach(ContentScrollViewer);
 
-            // Initialize localization
+            var ver = typeof(MainWindow).Assembly.GetName().Version;
+            SysVersionText.Text = ver != null ? $"SYS.VER // {ver.Major}.{ver.Minor}" : "SYS.VER // 1.1";
+
             _loc.CurrentLanguage = _manager.Settings.Language;
             _loc.LanguageChanged += OnLanguageChanged;
+
+            LoadSettings();
             UpdateLanguageUI();
-
-            // Start the manager
-            _manager.Start();
-            _isRunning = true;
-
-            // Subscribe to events
-            _manager.StatusChanged += Manager_StatusChanged;
-            _manager.ScrollActivity += Manager_ScrollActivity;
-
-            UpdateUI();
+            UpdateStatusUI();
         }
 
         private void LoadSettings()
         {
-            if (_manager == null) return;
-
-            var settings = _manager.Settings;
-            EnableToggle.IsChecked = settings.Enabled;
-            
-            // Check registry for actual startup state
-            StartupToggle.IsChecked = App.IsStartWithWindowsEnabled();
-            AccelerationToggle.IsChecked = settings.UseAcceleration;
-
-            SmoothnessSlider.Value = settings.SmoothnessFactor * 100;
-            SpeedSlider.Value = settings.ScrollMultiplier * 100;
-            FrictionSlider.Value = settings.FrictionFactor * 100;
-            GlideSlider.Value = settings.MomentumFactor * 100;
-
-            // Set easing combo box
-            foreach (ComboBoxItem item in EasingComboBox.Items)
+            _isLoading = true;
+            try
             {
-                if (item.Tag?.ToString() == settings.EasingFunction.ToString())
-                {
-                    EasingComboBox.SelectedItem = item;
-                    break;
-                }
-            }
+                var settings = _manager.Settings;
+                EnableToggle.IsChecked = settings.Enabled;
+                StartupToggle.IsChecked = App.IsStartWithWindowsEnabled();
+                AccelerationToggle.IsChecked = settings.UseAcceleration;
 
-            // Load excluded apps
-            RefreshExcludedAppsList();
+                SmoothnessSlider.Value = settings.SmoothnessFactor * 100;
+                SpeedSlider.Value = settings.ScrollMultiplier * 100;
+                FrictionSlider.Value = settings.FrictionFactor * 100;
+                GlideSlider.Value = settings.MomentumFactor * 100;
+
+                foreach (ComboBoxItem item in EasingComboBox.Items)
+                {
+                    if (item.Tag?.ToString() == settings.EasingFunction.ToString())
+                    {
+                        EasingComboBox.SelectedItem = item;
+                        break;
+                    }
+                }
+
+                RefreshExcludedAppsList();
+            }
+            finally
+            {
+                _isLoading = false;
+            }
         }
 
         private void RefreshExcludedAppsList()
         {
-            if (_manager == null) return;
-            
-            var count = _manager.Settings.ExcludedApps?.Count ?? 0;
-            ExcludedAppsCount.Text = count == 0 
+            int count = _manager.Settings.ExcludedApps?.Count ?? 0;
+            ExcludedAppsCount.Text = count == 0
                 ? _loc["NoAppsExcluded"]
                 : string.Format(_loc["AppsExcluded"], count);
         }
 
-        private void Manager_StatusChanged(object? sender, string status)
+        private void UpdateStatusUI()
         {
-            // Status description removed from UI
-        }
+            bool active = _manager.IsRunning;
+            StatusIndicator.Fill = (Brush)FindResource(active ? "TextInvertedBrush" : "WarningBrush");
+            StatusText.Text = active ? _loc["StatusActive"] : _loc["StatusPaused"];
 
-        private void Manager_ScrollActivity(object? sender, ScrollActivityEventArgs e)
-        {
-            // Could show activity indicator or log
-        }
-
-        private void UpdateUI()
-        {
-            if (_isRunning)
+            if (EnableToggle.IsChecked != active)
             {
-                StatusIndicator.Fill = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#10B981"));
-            }
-            else
-            {
-                StatusIndicator.Fill = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#F59E0B"));
+                _isLoading = true;
+                EnableToggle.IsChecked = active;
+                _isLoading = false;
             }
         }
 
         #region Language
 
-        private void FlagVN_Click(object sender, MouseButtonEventArgs e)
+        private void LangViButton_Click(object sender, RoutedEventArgs e)
         {
             SetLanguage("vi");
         }
 
-        private void FlagUS_Click(object sender, MouseButtonEventArgs e)
+        private void LangEnButton_Click(object sender, RoutedEventArgs e)
         {
             SetLanguage("en");
         }
 
         private void SetLanguage(string lang)
         {
-            if (_manager == null) return;
             _loc.CurrentLanguage = lang;
             _manager.Settings.Language = lang;
             SaveSettings();
@@ -135,21 +113,15 @@ namespace ScrollV
 
         private void OnLanguageChanged(object? sender, string lang)
         {
-            Dispatcher.Invoke(() =>
-            {
-                UpdateLanguageUI();
-                UpdateFlagSelection();
-            });
+            Dispatcher.Invoke(UpdateLanguageUI);
         }
 
         private void UpdateLanguageUI()
         {
-            // Section titles
             LblSettings.Text = _loc["Settings"];
             LblTuning.Text = _loc["Tuning"];
             LblExceptions.Text = _loc["Exceptions"];
 
-            // Settings
             LblEnableSmooth.Text = _loc["EnableSmooth"];
             LblEnableSmoothDesc.Text = _loc["EnableSmoothDesc"];
             LblStartWindows.Text = _loc["StartWithWindows"];
@@ -157,73 +129,107 @@ namespace ScrollV
             LblAcceleration.Text = _loc["ScrollAcceleration"];
             LblAccelerationDesc.Text = _loc["ScrollAccelerationDesc"];
 
-            // Tuning
             LblSmoothness.Text = _loc["Smoothness"];
             LblSpeed.Text = _loc["ScrollSpeed"];
             LblMomentum.Text = _loc["Momentum"];
             LblGlide.Text = _loc["Glide"];
             LblAnimation.Text = _loc["Animation"];
 
-            // Exceptions
             LblExcludedApps.Text = _loc["ExcludedApps"];
             BrowseAppsButton.Content = _loc["Manage"];
+            BrowseAppsButton.ToolTip = _loc["ManageTooltip"];
 
-            // Footer
+            TrayOpenMenuItem.Header = _loc["TrayOpen"];
+            TrayToggleMenuItem.Header = _loc["TrayToggle"];
+            TrayExitMenuItem.Header = _loc["TrayExit"];
+
             LblMadeBy.Text = _loc["MadeBy"];
 
-            // Update dynamic values
             RefreshExcludedAppsList();
             UpdateSliderLabels();
-            UpdateFlagSelection();
+            UpdateLanguageSwitchUI();
+            UpdateStatusUI();
         }
 
-        private void UpdateFlagSelection()
+        private void UpdateLanguageSwitchUI()
         {
-            var activeColor = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#8B5CF6"));
-            var inactiveColor = new SolidColorBrush(Colors.Transparent);
-            
-            FlagVN.BorderBrush = _loc.CurrentLanguage == "vi" ? activeColor : inactiveColor;
-            FlagUS.BorderBrush = _loc.CurrentLanguage == "en" ? activeColor : inactiveColor;
+            var activeBg = (Brush)FindResource("SurfaceBrush");
+            var activeFg = (Brush)FindResource("TextPrimaryBrush");
+            var inactiveFg = (Brush)FindResource("TextInvertedBrush");
+
+            bool isVi = _loc.CurrentLanguage == "vi";
+            LangViButton.Background = isVi ? activeBg : Brushes.Transparent;
+            LangViButton.Foreground = isVi ? activeFg : inactiveFg;
+
+            LangEnButton.Background = !isVi ? activeBg : Brushes.Transparent;
+            LangEnButton.Foreground = !isVi ? activeFg : inactiveFg;
         }
 
         private void UpdateSliderLabels()
         {
-            // Force update slider labels with current values
-            SmoothnessSlider_ValueChanged(SmoothnessSlider, new RoutedPropertyChangedEventArgs<double>(0, SmoothnessSlider.Value));
-            FrictionSlider_ValueChanged(FrictionSlider, new RoutedPropertyChangedEventArgs<double>(0, FrictionSlider.Value));
-            GlideSlider_ValueChanged(GlideSlider, new RoutedPropertyChangedEventArgs<double>(0, GlideSlider.Value));
+            FormatSmoothnessLabel(_manager.Settings.SmoothnessFactor);
+            FormatSpeedLabel(_manager.Settings.ScrollMultiplier);
+            FormatFrictionLabel(_manager.Settings.FrictionFactor);
+            FormatGlideLabel(_manager.Settings.MomentumFactor);
+        }
+
+        private void FormatSmoothnessLabel(double value)
+        {
+            if (SmoothnessValue == null) return;
+            if (value < 0.08) SmoothnessValue.Text = _loc["VerySmooth"];
+            else if (value < 0.12) SmoothnessValue.Text = _loc["Smooth"];
+            else if (value < 0.18) SmoothnessValue.Text = _loc["Medium"];
+            else if (value < 0.25) SmoothnessValue.Text = _loc["Fast"];
+            else SmoothnessValue.Text = _loc["Instant"];
+        }
+
+        private void FormatSpeedLabel(double value)
+        {
+            if (SpeedValue == null) return;
+            SpeedValue.Text = $"{value:F1}x";
+        }
+
+        private void FormatFrictionLabel(double value)
+        {
+            if (FrictionValue == null) return;
+            if (value < 0.85) FrictionValue.Text = _loc["Low"];
+            else if (value < 0.90) FrictionValue.Text = _loc["Medium"];
+            else if (value < 0.95) FrictionValue.Text = _loc["High"];
+            else FrictionValue.Text = _loc["VeryHigh"];
+        }
+
+        private void FormatGlideLabel(double value)
+        {
+            if (GlideValue == null) return;
+            if (value < 1.5) GlideValue.Text = _loc["Subtle"];
+            else if (value < 2.5) GlideValue.Text = _loc["Medium"];
+            else if (value < 3.5) GlideValue.Text = _loc["Strong"];
+            else if (value < 4.5) GlideValue.Text = _loc["VeryStrong"];
+            else GlideValue.Text = _loc["Maximum"];
         }
 
         #endregion
 
         #region Social Links
 
-        private void SocialFacebook_Click(object sender, MouseButtonEventArgs e)
+        private void SocialGithub_Click(object sender, RoutedEventArgs e)
         {
-            OpenUrl("https://www.facebook.com/rain.107/");
+            OpenUrl("https://github.com/w00tdev");
         }
 
-        private void SocialGithub_Click(object sender, MouseButtonEventArgs e)
-        {
-            OpenUrl("https://github.com/rainaku/Scroll-V");
-        }
-
-        private void SocialWebsite_Click(object sender, MouseButtonEventArgs e)
-        {
-            OpenUrl("https://rainaku.id.vn");
-        }
-
-        private void OpenUrl(string url)
+        private static void OpenUrl(string url)
         {
             try
             {
-                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                Process.Start(new ProcessStartInfo
                 {
                     FileName = url,
                     UseShellExecute = true
                 });
             }
-            catch { }
+            catch
+            {
+            }
         }
 
         #endregion
@@ -233,7 +239,9 @@ namespace ScrollV
         private void Header_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
         {
             if (e.ButtonState == MouseButtonState.Pressed)
+            {
                 DragMove();
+            }
         }
 
         private void MinimizeButton_Click(object sender, RoutedEventArgs e)
@@ -252,15 +260,16 @@ namespace ScrollV
 
         private void EnableToggle_Changed(object sender, RoutedEventArgs e)
         {
-            if (_manager == null) return;
+            if (_isLoading || _manager == null) return;
             _manager.Settings.Enabled = EnableToggle.IsChecked == true;
             _manager.ApplySettings();
+            UpdateStatusUI();
             SaveSettings();
         }
 
         private void StartupToggle_Changed(object sender, RoutedEventArgs e)
         {
-            if (_manager == null) return;
+            if (_isLoading || _manager == null) return;
             bool enabled = StartupToggle.IsChecked == true;
             _manager.Settings.StartWithWindows = enabled;
             App.SetStartWithWindows(enabled);
@@ -269,7 +278,7 @@ namespace ScrollV
 
         private void AccelerationToggle_Changed(object sender, RoutedEventArgs e)
         {
-            if (_manager == null) return;
+            if (_isLoading || _manager == null) return;
             _manager.Settings.UseAcceleration = AccelerationToggle.IsChecked == true;
             _manager.ApplySettings();
             SaveSettings();
@@ -277,74 +286,57 @@ namespace ScrollV
 
         private void SmoothnessSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
         {
-            if (_manager == null || SmoothnessValue == null) return;
-
+            if (_manager == null) return;
             double value = SmoothnessSlider.Value / 100.0;
+            FormatSmoothnessLabel(value);
+            if (_isLoading) return;
+
             _manager.Settings.SmoothnessFactor = value;
             _manager.ApplySettings();
-
-            // Update label
-            if (value < 0.08) SmoothnessValue.Text = _loc["VerySmooth"];
-            else if (value < 0.12) SmoothnessValue.Text = _loc["Smooth"];
-            else if (value < 0.18) SmoothnessValue.Text = _loc["Medium"];
-            else if (value < 0.25) SmoothnessValue.Text = _loc["Fast"];
-            else SmoothnessValue.Text = _loc["Instant"];
-
             SaveSettings();
         }
 
         private void SpeedSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
         {
-            if (_manager == null || SpeedValue == null) return;
-
+            if (_manager == null) return;
             double value = SpeedSlider.Value / 100.0;
-            // Set both ScrollMultiplier (base speed) and AccelerationFactor (rapid scroll boost)
-            _manager.Settings.ScrollMultiplier = value;
-            _manager.Settings.AccelerationFactor = 1.0 + (value - 1.0) * 0.5; // Proportional acceleration
-            _manager.ApplySettings();
+            FormatSpeedLabel(value);
+            if (_isLoading) return;
 
-            SpeedValue.Text = $"{value:F1}x";
+            _manager.Settings.ScrollMultiplier = value;
+            _manager.Settings.AccelerationFactor = 1.0 + (value - 1.0) * 0.5;
+            _manager.ApplySettings();
             SaveSettings();
         }
 
         private void FrictionSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
         {
-            if (_manager == null || FrictionValue == null) return;
-
+            if (_manager == null) return;
             double value = FrictionSlider.Value / 100.0;
+            FormatFrictionLabel(value);
+            if (_isLoading) return;
+
             _manager.Settings.FrictionFactor = value;
             _manager.ApplySettings();
-
-            if (value < 0.85) FrictionValue.Text = _loc["Low"];
-            else if (value < 0.90) FrictionValue.Text = _loc["Medium"];
-            else if (value < 0.95) FrictionValue.Text = _loc["High"];
-            else FrictionValue.Text = _loc["VeryHigh"];
-
             SaveSettings();
         }
 
         private void GlideSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
         {
-            if (_manager == null || GlideValue == null) return;
+            if (_manager == null) return;
+            double value = GlideSlider.Value / 100.0;
+            FormatGlideLabel(value);
+            if (_isLoading) return;
 
-            double value = GlideSlider.Value / 100.0; // 1.0 - 5.0
             _manager.Settings.MomentumFactor = value;
             _manager.ApplySettings();
-
-            if (value < 1.5) GlideValue.Text = _loc["Subtle"];
-            else if (value < 2.5) GlideValue.Text = _loc["Medium"];
-            else if (value < 3.5) GlideValue.Text = _loc["Strong"];
-            else if (value < 4.5) GlideValue.Text = _loc["VeryStrong"];
-            else GlideValue.Text = _loc["Maximum"];
-
             SaveSettings();
         }
 
         private void EasingComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
-            if (_manager == null || EasingComboBox.SelectedItem == null) return;
+            if (_isLoading || _manager == null || EasingComboBox.SelectedItem is not ComboBoxItem item) return;
 
-            var item = (ComboBoxItem)EasingComboBox.SelectedItem;
             if (Enum.TryParse<EasingType>(item.Tag?.ToString(), out var easing))
             {
                 _manager.Settings.EasingFunction = easing;
@@ -355,17 +347,16 @@ namespace ScrollV
 
         #endregion
 
-        #region Per-App Settings
+        #region Excluded Apps Dialog
 
         private void BrowseAppsButton_Click(object sender, RoutedEventArgs e)
         {
-            if (_manager == null) return;
-
-            var dialog = new RunningAppsDialog(_manager.Settings);
-            dialog.Owner = this;
+            var dialog = new RunningAppsDialog(_manager.Settings)
+            {
+                Owner = this
+            };
             dialog.ShowDialog();
-            
-            // Refresh the count and save
+
             RefreshExcludedAppsList();
             SaveSettings();
         }
@@ -384,36 +375,47 @@ namespace ScrollV
             ShowWindow();
         }
 
-        private void ShowWindow()
+        [System.Runtime.InteropServices.DllImport("user32.dll")]
+        private static extern bool SetForegroundWindow(IntPtr hWnd);
+
+        [System.Runtime.InteropServices.DllImport("user32.dll")]
+        private static extern bool ShowWindowAsync(IntPtr hWnd, int nCmdShow);
+
+        public void ShowWindow()
         {
+            ShowInTaskbar = true;
             Visibility = Visibility.Visible;
-            Show();
             WindowState = WindowState.Normal;
+            Show();
             Activate();
-            Topmost = true;  // Bring to front
-            Topmost = false; // Allow other windows on top again
+            Focus();
+
+            var hwnd = new System.Windows.Interop.WindowInteropHelper(this).Handle;
+            if (hwnd != IntPtr.Zero)
+            {
+                ShowWindowAsync(hwnd, 9);
+                SetForegroundWindow(hwnd);
+            }
         }
 
         public void HideWindow()
         {
+            ShowInTaskbar = false;
             Visibility = Visibility.Hidden;
             Hide();
-            
-            // Optimize memory when hiding
-            App.OptimizeMemory();
+            App.OptimizeMemory(true);
         }
 
         private void TrayToggle_Click(object sender, RoutedEventArgs e)
         {
-            _manager?.Toggle();
-            _isRunning = !_isRunning;
-            UpdateUI();
+            _manager.Toggle();
+            UpdateStatusUI();
         }
 
         private void TrayExit_Click(object sender, RoutedEventArgs e)
         {
             TrayIcon.Dispose();
-            _manager?.Dispose();
+            _manager.Dispose();
             Application.Current.Shutdown();
         }
 
@@ -421,11 +423,13 @@ namespace ScrollV
 
         private void SaveSettings()
         {
-            _manager?.SaveSettings();
+            _manager.SaveSettings();
         }
 
         protected override void OnClosed(EventArgs e)
         {
+            _loc.LanguageChanged -= OnLanguageChanged;
+            _smoothScroll.Detach();
             TrayIcon.Dispose();
             base.OnClosed(e);
         }

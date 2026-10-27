@@ -26,15 +26,24 @@ namespace ScrollV.Core
 
         #endregion
 
+        private readonly object _stateLock = new();
         private Thread? _animationThread;
-        private readonly CancellationTokenSource _cts = new();
-        private double _remainingScroll = 0;
-        private bool _isScrolling = false;
-        private IntPtr _targetWindow = IntPtr.Zero;
-        private bool _isHorizontal = false;
+        private volatile bool _isRunning;
+
+        private double _remainingScroll;
+        private double _accumulatedDelta;
+        private double _currentVelocity;
+        private double _peakVelocity;
+        private volatile bool _isScrolling;
+        private bool _isHorizontal;
+        private bool _isGliding;
+        private bool _disposed;
         private DateTime _lastScrollTime = DateTime.MinValue;
-        private bool _disposed = false;
-        private double _accumulatedDelta = 0;
+
+        internal double RemainingScroll
+        {
+            get { lock (_stateLock) return _remainingScroll; }
+        }
 
         // Scroll settings
         public double SmoothnessFactor { get; set; } = 0.05;
@@ -53,29 +62,21 @@ namespace ScrollV.Core
         // Momentum/Inertia settings
         public double MomentumFactor { get; set; } = 3.2;
         public double GlideDecay { get; set; } = 0.992;
-        private double _currentVelocity = 0;
-        private double _peakVelocity = 0;
-        private bool _isGliding = false;
         private const double GLIDE_TRIGGER_DELAY = 80;
 
         // Stall detection - handles hook chain delays (e.g., from IDM)
-        private const double MAX_FRAME_TIME = 100;      // If frame takes > 100ms, consider it stalled
-        private const double STALL_RECOVERY_FACTOR = 0.5; // Reduce scroll by 50% after stall to prevent jerk
-        private DateTime _lastFrameTime = DateTime.Now;
+        private const double MAX_FRAME_TIME = 100;
+        private const double STALL_RECOVERY_FACTOR = 0.5;
 
         public ScrollVEngine()
         {
-            // Boost process priority for better hook response
-            try { Process.GetCurrentProcess().PriorityClass = ProcessPriorityClass.High; } catch { }
-            
-            // Set system timer resolution to 1ms for precise Thread.Sleep(1)
             timeBeginPeriod(1);
-
             StartAnimationLoop();
         }
 
         private void StartAnimationLoop()
         {
+            _isRunning = true;
             _animationThread = new Thread(AnimationLoop)
             {
                 IsBackground = true,
@@ -87,157 +88,157 @@ namespace ScrollV.Core
 
         private void AnimationLoop()
         {
-            var stopwatch = new Stopwatch();
-            double lastFrameTime = 0;
+            var stopwatch = Stopwatch.StartNew();
+            double lastFrameTime = stopwatch.Elapsed.TotalMilliseconds;
 
-            while (!_cts.IsCancellationRequested)
+            while (_isRunning)
             {
-                stopwatch.Start();
+                double currentTime = stopwatch.Elapsed.TotalMilliseconds;
+                double deltaTime = currentTime - lastFrameTime;
+                lastFrameTime = currentTime;
 
-                if (IsEnabled && _isScrolling)
+                if (_isScrolling && IsEnabled && deltaTime > 0)
                 {
-                    double deltaTime = stopwatch.Elapsed.TotalMilliseconds - lastFrameTime;
-                    if (deltaTime > 0)
-                    {
-                        UpdateAnimation(deltaTime);
-                    }
+                    UpdateAnimation(deltaTime);
+                    Thread.Sleep(1);
                 }
                 else
                 {
-                    // Sleep more when idle to save CPU
-                    Thread.Sleep(10);
+                    Thread.Sleep(5);
                 }
-
-                lastFrameTime = stopwatch.Elapsed.TotalMilliseconds;
-
-                // Target ~144Hz - 240Hz for smoothness, but use small sleeps to prevent 100% CPU
-                // 4ms sleep results in ~250fps which is more than enough for buttery smoothness
-                Thread.Sleep(1);
             }
         }
 
         private void UpdateAnimation(double deltaTime)
         {
-            if (Math.Abs(_remainingScroll) < MinVelocityThreshold)
-            {
-                StopScrolling();
-                return;
-            }
+            int intScroll = 0;
+            bool isHorizontal = false;
 
-            // Stall detection: if frame took too long (e.g., due to IDM hook chain delay)
-            // reduce the remaining scroll to prevent large jumps when resuming
-            if (deltaTime > MAX_FRAME_TIME)
+            lock (_stateLock)
             {
-                _remainingScroll *= STALL_RECOVERY_FACTOR;
-                _accumulatedDelta = 0; // Clear accumulated sub-pixel scroll
-                
-                // If scroll is now negligible, stop completely
-                if (Math.Abs(_remainingScroll) < MinVelocityThreshold)
+                if (!_isScrolling || Math.Abs(_remainingScroll) < MinVelocityThreshold)
                 {
-                    StopScrolling();
+                    StopScrollingLocked();
                     return;
                 }
+
+                if (deltaTime > MAX_FRAME_TIME)
+                {
+                    _remainingScroll *= STALL_RECOVERY_FACTOR;
+                    _accumulatedDelta = 0;
+
+                    if (Math.Abs(_remainingScroll) < MinVelocityThreshold)
+                    {
+                        StopScrollingLocked();
+                        return;
+                    }
+                }
+
+                double timeFactor = Math.Min(deltaTime / 8.33, 5.0);
+
+                var timeSinceLastInput = (DateTime.UtcNow - _lastScrollTime).TotalMilliseconds;
+                if (!_isGliding && timeSinceLastInput > GLIDE_TRIGGER_DELAY && Math.Abs(_peakVelocity) > 10)
+                {
+                    _isGliding = true;
+                    double momentumBoost = Math.Sign(_remainingScroll) * Math.Abs(_peakVelocity) * MomentumFactor * 0.3;
+                    _remainingScroll += momentumBoost;
+                }
+
+                double scrollAmount = CalculateAdaptiveScrollStep(timeFactor);
+                _accumulatedDelta += scrollAmount;
+
+                intScroll = (int)_accumulatedDelta;
+                if (intScroll != 0)
+                {
+                    _accumulatedDelta -= intScroll;
+                    isHorizontal = _isHorizontal;
+                }
+
+                _remainingScroll -= scrollAmount;
+
+                double dynamicFriction = _isGliding ? CalculateGlideFriction() : CalculateDynamicFriction();
+                double adjustedFriction = Math.Pow(dynamicFriction, timeFactor);
+                _remainingScroll *= adjustedFriction;
             }
 
-            // Normalization factor for 120fps (8.33ms)
-            // This ensures scrolling speed remains consistent regardless of frame rate
-            // Cap the time factor to prevent huge jumps after stalls
-            double timeFactor = Math.Min(deltaTime / 8.33, 5.0);
-
-            // Check glide trigger
-            var timeSinceLastInput = (DateTime.Now - _lastScrollTime).TotalMilliseconds;
-            if (!_isGliding && timeSinceLastInput > GLIDE_TRIGGER_DELAY && Math.Abs(_peakVelocity) > 10)
-            {
-                _isGliding = true;
-                double momentumBoost = Math.Sign(_remainingScroll) * Math.Abs(_peakVelocity) * MomentumFactor * 0.3;
-                _remainingScroll += momentumBoost;
-            }
-
-            // Calculate adaptive step with time factor
-            double scrollAmount = CalculateAdaptiveScrollStep(timeFactor);
-
-            // Accumulate sub-pixel scrolling
-            _accumulatedDelta += scrollAmount;
-
-            int intScroll = (int)_accumulatedDelta;
             if (intScroll != 0)
             {
-                ApplyScroll(intScroll);
-                _accumulatedDelta -= intScroll;
+                ApplyScroll(intScroll, isHorizontal);
             }
-
-            _remainingScroll -= scrollAmount;
-
-            // Apply friction adjusted for frame time
-            double dynamicFriction = _isGliding ? CalculateGlideFriction() : CalculateDynamicFriction();
-            double adjustedFriction = Math.Pow(dynamicFriction, timeFactor);
-            _remainingScroll *= adjustedFriction;
         }
 
         private double CalculateAdaptiveScrollStep(double timeFactor)
         {
             double absRemaining = Math.Abs(_remainingScroll);
-            
+
             if (absRemaining < SmoothStopThreshold)
             {
                 double progress = absRemaining / SmoothStopThreshold;
                 double smoothFactor = (0.05 + progress * 0.1) * timeFactor;
                 double step = _remainingScroll * smoothFactor;
-                
+
                 if (Math.Abs(step) < MinScrollStep * timeFactor && absRemaining > MinVelocityThreshold)
                 {
                     step = Math.Sign(_remainingScroll) * MinScrollStep * timeFactor;
                 }
                 return step;
             }
-            
-            // Adjust smoothness factor for the current frame time
-            double stepFactor = (1 - Math.Pow(1 - SmoothnessFactor, timeFactor));
+
+            double stepFactor = 1 - Math.Pow(1 - SmoothnessFactor, timeFactor);
             double easedT = ApplyEasing(stepFactor);
             return _remainingScroll * easedT;
         }
 
-        public void AddScrollDelta(short delta, IntPtr window, bool isHorizontal)
+        public void AddScrollDelta(double delta, bool isHorizontal)
         {
             if (!IsEnabled) return;
 
-            _targetWindow = window;
-            _isHorizontal = isHorizontal;
-            _isGliding = false;
-
-            double acceleratedDelta = delta * AccelerationFactor;
-
-            if (UseAcceleration)
+            lock (_stateLock)
             {
-                var timeSinceLastScroll = (DateTime.Now - _lastScrollTime).TotalMilliseconds;
-                if (timeSinceLastScroll < 150)
+                if (_isHorizontal != isHorizontal)
                 {
-                    double accelerationBoost = 1.0 + Math.Min(1.5, (150 - timeSinceLastScroll) / 100.0);
-                    acceleratedDelta *= accelerationBoost;
+                    _remainingScroll = 0;
+                    _accumulatedDelta = 0;
+                    _peakVelocity = 0;
+                    _isHorizontal = isHorizontal;
                 }
+
+                _isGliding = false;
+
+                double acceleratedDelta = delta * AccelerationFactor;
+
+                if (UseAcceleration)
+                {
+                    var timeSinceLastScroll = (DateTime.UtcNow - _lastScrollTime).TotalMilliseconds;
+                    if (timeSinceLastScroll < 150)
+                    {
+                        double accelerationBoost = 1.0 + Math.Min(1.5, (150 - timeSinceLastScroll) / 100.0);
+                        acceleratedDelta *= accelerationBoost;
+                    }
+                }
+
+                _lastScrollTime = DateTime.UtcNow;
+
+                if (Math.Sign(_remainingScroll) == Math.Sign(acceleratedDelta) || Math.Abs(_remainingScroll) < 1)
+                {
+                    _remainingScroll += acceleratedDelta;
+                }
+                else
+                {
+                    _remainingScroll = acceleratedDelta;
+                    _accumulatedDelta = 0;
+                    _peakVelocity = 0;
+                }
+
+                _currentVelocity = acceleratedDelta;
+                if (Math.Abs(_currentVelocity) > Math.Abs(_peakVelocity))
+                {
+                    _peakVelocity = _currentVelocity;
+                }
+
+                _remainingScroll = Math.Clamp(_remainingScroll, -MaxVelocity * 15, MaxVelocity * 15);
+                _isScrolling = true;
             }
-
-            _lastScrollTime = DateTime.Now;
-
-            if (Math.Sign(_remainingScroll) == Math.Sign(acceleratedDelta) || Math.Abs(_remainingScroll) < 1)
-            {
-                _remainingScroll += acceleratedDelta;
-            }
-            else
-            {
-                _remainingScroll = acceleratedDelta;
-                _peakVelocity = 0;
-            }
-
-            _currentVelocity = acceleratedDelta;
-            if (Math.Abs(_currentVelocity) > Math.Abs(_peakVelocity))
-            {
-                _peakVelocity = _currentVelocity;
-            }
-
-            _remainingScroll = Math.Clamp(_remainingScroll, -MaxVelocity * 15, MaxVelocity * 15);
-
-            _isScrolling = true;
         }
 
         private double CalculateGlideFriction()
@@ -279,14 +280,14 @@ namespace ScrollV.Core
             };
         }
 
-        private void ApplyScroll(int delta)
+        private static void ApplyScroll(int delta, bool isHorizontal)
         {
             if (delta == 0) return;
-            uint flags = _isHorizontal ? MOUSEEVENTF_HWHEEL : MOUSEEVENTF_WHEEL;
+            uint flags = isHorizontal ? MOUSEEVENTF_HWHEEL : MOUSEEVENTF_WHEEL;
             mouse_event(flags, 0, 0, delta, MouseHook.ScrollSignature);
         }
 
-        private void StopScrolling()
+        private void StopScrollingLocked()
         {
             _isScrolling = false;
             _remainingScroll = 0;
@@ -296,16 +297,21 @@ namespace ScrollV.Core
             _isGliding = false;
         }
 
-        public void Reset() => StopScrolling();
+        public void Reset()
+        {
+            lock (_stateLock)
+            {
+                StopScrollingLocked();
+            }
+        }
 
         public void Dispose()
         {
-            if (!_disposed)
-            {
-                _cts.Cancel();
-                timeEndPeriod(1);
-                _disposed = true;
-            }
+            if (_disposed) return;
+            _isRunning = false;
+            _animationThread?.Join(100);
+            timeEndPeriod(1);
+            _disposed = true;
         }
     }
 

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 
@@ -16,7 +17,6 @@ namespace ScrollV.Core
         private const int WM_MOUSEWHEEL = 0x020A;
         private const int WM_MOUSEHWHEEL = 0x020E;
 
-        // Flag to identify injected events
         private static readonly UIntPtr SMOOTH_SCROLL_SIGNATURE = new UIntPtr(0x53534D53); // "SSMS"
 
         [StructLayout(LayoutKind.Sequential)]
@@ -79,7 +79,6 @@ namespace ScrollV.Core
 
         private const int VK_CONTROL = 0x11;
 
-        // Known IDM window class names that can cause hook conflicts
         private static readonly HashSet<string> IDM_WINDOW_CLASSES = new(StringComparer.OrdinalIgnoreCase)
         {
             "IEFrame_idm",
@@ -92,19 +91,17 @@ namespace ScrollV.Core
 
         private IntPtr _hookId = IntPtr.Zero;
         private readonly LowLevelMouseProc _proc;
-        private bool _isHooked = false;
-        private bool _disposed = false;
-        
-        // Cache for process names to avoid expensive lookups
+        private bool _isHooked;
+        private bool _disposed;
+
         private static readonly ConcurrentDictionary<uint, (string Name, DateTime CachedAt)> _processCache = new();
         private static readonly TimeSpan CacheExpiry = TimeSpan.FromSeconds(30);
 
         public event EventHandler<MouseScrollEventArgs>? MouseScroll;
 
         public bool IsEnabled { get; set; } = true;
-        public bool IsPaused { get; set; } = false;
+        public bool IsPaused { get; set; }
 
-        // Signature to identify our own injected scroll events
         public static UIntPtr ScrollSignature => SMOOTH_SCROLL_SIGNATURE;
 
         public MouseHook()
@@ -119,7 +116,12 @@ namespace ScrollV.Core
             using (var curProcess = Process.GetCurrentProcess())
             using (var curModule = curProcess.MainModule!)
             {
-                _hookId = SetWindowsHookEx(WH_MOUSE_LL, _proc, GetModuleHandle(curModule.ModuleName), 0);
+                IntPtr hMod = GetModuleHandle(curModule.ModuleName);
+                if (hMod == IntPtr.Zero)
+                {
+                    hMod = GetModuleHandle(null!);
+                }
+                _hookId = SetWindowsHookEx(WH_MOUSE_LL, _proc, hMod, 0);
             }
 
             if (_hookId == IntPtr.Zero)
@@ -140,27 +142,14 @@ namespace ScrollV.Core
             _isHooked = false;
         }
 
-        public void Pause()
-        {
-            IsPaused = true;
-        }
-
-        public void Resume()
-        {
-            IsPaused = false;
-        }
-
         private IntPtr HookCallback(int nCode, IntPtr wParam, IntPtr lParam)
         {
-            // Fast path: if paused or disabled, pass through immediately
             if (IsPaused || !IsEnabled || nCode < 0)
             {
                 return CallNextHookEx(_hookId, nCode, wParam, lParam);
             }
 
             int msg = wParam.ToInt32();
-            
-            // Only process scroll events
             if (msg != WM_MOUSEWHEEL && msg != WM_MOUSEHWHEEL)
             {
                 return CallNextHookEx(_hookId, nCode, wParam, lParam);
@@ -168,32 +157,25 @@ namespace ScrollV.Core
 
             var hookStruct = Marshal.PtrToStructure<MSLLHOOKSTRUCT>(lParam);
 
-            // Fast path: check if this is our own injected scroll event
             if (hookStruct.dwExtraInfo == (IntPtr)SMOOTH_SCROLL_SIGNATURE)
             {
                 return CallNextHookEx(_hookId, nCode, wParam, lParam);
             }
 
-            // Skip smooth scroll when Ctrl is held (zoom functionality)
             if ((GetAsyncKeyState(VK_CONTROL) & 0x8000) != 0)
             {
                 return CallNextHookEx(_hookId, nCode, wParam, lParam);
             }
 
-            // Skip when IDM windows are active to avoid hook chain conflicts
             if (IsIDMWindowActive())
             {
                 return CallNextHookEx(_hookId, nCode, wParam, lParam);
             }
 
-            // Extract scroll delta (hiword of mouseData)
             short delta = (short)(hookStruct.mouseData >> 16);
             bool isHorizontal = msg == WM_MOUSEHWHEEL;
 
-            // Get the window under cursor
             IntPtr windowUnderCursor = WindowFromPoint(hookStruct.pt);
-
-            // Get process info with caching
             GetWindowThreadProcessId(windowUnderCursor, out uint processId);
             string processName = GetProcessNameCached(processId);
 
@@ -208,10 +190,15 @@ namespace ScrollV.Core
                 ProcessName = processName
             };
 
-            // Raise event
-            MouseScroll?.Invoke(this, args);
+            try
+            {
+                MouseScroll?.Invoke(this, args);
+            }
+            catch
+            {
+                return CallNextHookEx(_hookId, nCode, wParam, lParam);
+            }
 
-            // If handled, suppress the original scroll
             if (args.Handled)
             {
                 return (IntPtr)1;
@@ -224,22 +211,15 @@ namespace ScrollV.Core
         {
             if (processId == 0) return "Idle";
 
-            // Check cache first
-            if (_processCache.TryGetValue(processId, out var cached))
+            if (_processCache.TryGetValue(processId, out var cached) &&
+                DateTime.UtcNow - cached.CachedAt < CacheExpiry)
             {
-                if (DateTime.Now - cached.CachedAt < CacheExpiry)
-                {
-                    return cached.Name;
-                }
+                return cached.Name;
             }
 
-            // Fast Win32 lookup instead of Process.GetProcessById
             string name = GetProcessNameWin32(processId);
+            _processCache[processId] = (name, DateTime.UtcNow);
 
-            // Cache the result
-            _processCache[processId] = (name, DateTime.Now);
-            
-            // Clean old cache entries periodically
             if (_processCache.Count > 100)
             {
                 CleanCache();
@@ -251,29 +231,28 @@ namespace ScrollV.Core
         private static string GetProcessNameWin32(uint processId)
         {
             IntPtr hProcess = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, processId);
-            if (hProcess != IntPtr.Zero)
+            if (hProcess == IntPtr.Zero) return "Unknown";
+
+            try
             {
-                try
+                var sb = new System.Text.StringBuilder(1024);
+                int size = sb.Capacity;
+                if (QueryFullProcessImageName(hProcess, 0, sb, ref size))
                 {
-                    var sb = new System.Text.StringBuilder(1024);
-                    int size = sb.Capacity;
-                    if (QueryFullProcessImageName(hProcess, 0, sb, ref size))
-                    {
-                        string fullPath = sb.ToString();
-                        return System.IO.Path.GetFileNameWithoutExtension(fullPath);
-                    }
-                }
-                finally
-                {
-                    CloseHandle(hProcess);
+                    return System.IO.Path.GetFileNameWithoutExtension(sb.ToString());
                 }
             }
+            finally
+            {
+                CloseHandle(hProcess);
+            }
+
             return "Unknown";
         }
 
         private static void CleanCache()
         {
-            var now = DateTime.Now;
+            var now = DateTime.UtcNow;
             foreach (var kvp in _processCache)
             {
                 if (now - kvp.Value.CachedAt > CacheExpiry)
@@ -283,10 +262,6 @@ namespace ScrollV.Core
             }
         }
 
-        /// <summary>
-        /// Check if an IDM window is currently active (foreground).
-        /// IDM has its own mouse hook that can conflict with smooth scrolling.
-        /// </summary>
         private static bool IsIDMWindowActive()
         {
             try
@@ -296,29 +271,17 @@ namespace ScrollV.Core
 
                 var className = new System.Text.StringBuilder(256);
                 int result = GetClassName(foreground, className, 256);
-                
                 if (result > 0)
                 {
                     string classStr = className.ToString();
-                    
-                    // Check against known IDM window classes
-                    if (IDM_WINDOW_CLASSES.Contains(classStr))
-                    {
-                        return true;
-                    }
-                    
-                    // Also check for IDM prefix in class name
-                    if (classStr.StartsWith("IDM", StringComparison.OrdinalIgnoreCase))
-                    {
-                        return true;
-                    }
+                    return IDM_WINDOW_CLASSES.Contains(classStr) ||
+                           classStr.StartsWith("IDM", StringComparison.OrdinalIgnoreCase);
                 }
             }
             catch
             {
-                // Fail safe - don't block scrolling on error
             }
-            
+
             return false;
         }
 
@@ -330,14 +293,9 @@ namespace ScrollV.Core
 
         protected virtual void Dispose(bool disposing)
         {
-            if (!_disposed)
-            {
-                if (disposing)
-                {
-                    Stop();
-                }
-                _disposed = true;
-            }
+            if (_disposed) return;
+            Stop();
+            _disposed = true;
         }
 
         ~MouseHook()

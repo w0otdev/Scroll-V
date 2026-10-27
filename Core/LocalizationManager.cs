@@ -31,30 +31,29 @@ namespace ScrollV.Core
         {
             ["vi"] = new Dictionary<string, string>
             {
-                // Section titles
-                ["Settings"] = "Cài đặt",
-                ["Tuning"] = "Tinh chỉnh",
-                ["Exceptions"] = "Ngoại lệ",
+                ["Settings"] = "HỆ THỐNG CƠ BẢN",
+                ["Tuning"] = "THÔNG SỐ VẬT LÝ",
+                ["Exceptions"] = "BỘ LỌC TIẾN TRÌNH",
 
-                // Settings
-                ["EnableSmooth"] = "Bật cuộn mượt",
-                ["EnableSmoothDesc"] = "Áp dụng cho tất cả ứng dụng",
-                ["StartWithWindows"] = "Khởi động cùng Windows",
-                ["StartWithWindowsDesc"] = "Tự động chạy khi bật máy",
-                ["ScrollAcceleration"] = "Tăng tốc cuộn",
-                ["ScrollAccelerationDesc"] = "Cuộn nhanh hơn khi lướt liên tục",
+                ["StatusActive"] = "TRỰC TUYẾN",
+                ["StatusPaused"] = "NGẮT KẾT NỐI",
 
-                // Tuning
-                ["Smoothness"] = "Độ mượt",
-                ["ScrollSpeed"] = "Tốc độ cuộn",
-                ["Momentum"] = "Quán tính",
-                ["Glide"] = "Độ trôi",
-                ["Animation"] = "Hiệu ứng",
+                ["EnableSmooth"] = "Cuộn mượt toàn hệ thống",
+                ["EnableSmoothDesc"] = "Làm mượt con lăn chuột trên mọi cửa sổ",
+                ["StartWithWindows"] = "Khởi động cùng hệ điều hành",
+                ["StartWithWindowsDesc"] = "Chạy ngầm trong khay hệ thống khi bật máy",
+                ["ScrollAcceleration"] = "Gia tốc theo lực lăn",
+                ["ScrollAccelerationDesc"] = "Tăng quãng đường khi lăn chuột liên tục",
 
-                // Values
+                ["Smoothness"] = "Độ mượt phản hồi",
+                ["ScrollSpeed"] = "Tốc độ bước cuộn",
+                ["Momentum"] = "Quán tính giữ đà",
+                ["Glide"] = "Độ trôi cuối hành trình",
+                ["Animation"] = "Đường cong nội suy",
+
                 ["VerySmooth"] = "Rất mượt",
                 ["Smooth"] = "Mượt",
-                ["Medium"] = "Trung bình",
+                ["Medium"] = "Cân bằng",
                 ["Fast"] = "Nhanh",
                 ["Instant"] = "Tức thì",
                 ["Low"] = "Thấp",
@@ -65,78 +64,85 @@ namespace ScrollV.Core
                 ["VeryStrong"] = "Rất mạnh",
                 ["Maximum"] = "Tối đa",
 
-                // Exceptions
-                ["ExcludedApps"] = "Ứng dụng loại trừ",
-                ["NoAppsExcluded"] = "Không có ứng dụng nào",
-                ["AppsExcluded"] = "{0} ứng dụng được loại trừ",
-                ["Manage"] = "Quản lý",
+                ["ExcludedApps"] = "Tiến trình ngoại lệ",
+                ["NoAppsExcluded"] = "Chưa loại trừ ứng dụng nào",
+                ["AppsExcluded"] = "Đang bỏ qua {0} tiến trình",
+                ["Manage"] = "THIẾT LẬP",
+                ["ManageTooltip"] = "Chọn ứng dụng để tắt cuộn mượt",
 
-                // Running Apps Dialog
-                ["RunningApps"] = "Ứng dụng đang chạy",
-                ["SearchApps"] = "Tìm kiếm ứng dụng...",
-                ["ToggleExcludeHint"] = "Bật = cuộn mượt hoạt động, Tắt = tắt cuộn mượt",
+                ["RunningApps"] = "DANH SÁCH TIẾN TRÌNH",
+                ["SearchApps"] = "Lọc theo tên tiến trình hoặc cửa sổ...",
+                ["ToggleExcludeHint"] = "Chuyển sang TẮT để giữ nguyên cuộn mặc định của Windows trên ứng dụng đó.",
+                ["BackgroundProcess"] = "Tiến trình chạy nền",
+                ["Refresh"] = "QUÉT LẠI",
 
-                // Footer
-                ["MadeBy"] = "Thực hiện bởi rainaku",
+                ["TrayOpen"] = "Mở giao diện điều khiển",
+                ["TrayToggle"] = "Bật / Tắt cuộn mượt",
+                ["TrayExit"] = "Ngắt kết nối Scroll-V",
+
+                ["MadeBy"] = "ĐƠN VỊ PHÁT TRIỂN: W00TDEV"
             },
             ["en"] = new Dictionary<string, string>
             {
-                // Section titles
-                ["Settings"] = "Settings",
-                ["Tuning"] = "Tuning",
-                ["Exceptions"] = "Exceptions",
+                ["Settings"] = "SYSTEM PARAMETERS",
+                ["Tuning"] = "PHYSICS CALIBRATION",
+                ["Exceptions"] = "PROCESS EXCLUSIONS",
 
-                // Settings
-                ["EnableSmooth"] = "Enable Smooth Scroll",
-                ["EnableSmoothDesc"] = "Apply to all applications",
-                ["StartWithWindows"] = "Start with Windows",
-                ["StartWithWindowsDesc"] = "Auto-start on boot",
-                ["ScrollAcceleration"] = "Scroll Acceleration",
-                ["ScrollAccelerationDesc"] = "Scroll faster on continuous input",
+                ["StatusActive"] = "ONLINE",
+                ["StatusPaused"] = "OFFLINE",
 
-                // Tuning
-                ["Smoothness"] = "Smoothness",
-                ["ScrollSpeed"] = "Scroll Speed",
-                ["Momentum"] = "Momentum",
-                ["Glide"] = "Glide",
-                ["Animation"] = "Animation",
+                ["EnableSmooth"] = "System-wide smooth scroll",
+                ["EnableSmoothDesc"] = "Interpolate mouse wheel input across all windows",
+                ["StartWithWindows"] = "Boot with operating system",
+                ["StartWithWindowsDesc"] = "Launch silently in the system tray at sign-in",
+                ["ScrollAcceleration"] = "Impulse acceleration",
+                ["ScrollAccelerationDesc"] = "Cover more distance during rapid wheel flicks",
 
-                // Values
-                ["VerySmooth"] = "Very Smooth",
+                ["Smoothness"] = "Response damping",
+                ["ScrollSpeed"] = "Step multiplier",
+                ["Momentum"] = "Inertia retention",
+                ["Glide"] = "Coast distance",
+                ["Animation"] = "Interpolation curve",
+
+                ["VerySmooth"] = "Very smooth",
                 ["Smooth"] = "Smooth",
-                ["Medium"] = "Medium",
-                ["Fast"] = "Fast",
-                ["Instant"] = "Instant",
-                ["Low"] = "Low",
-                ["High"] = "High",
-                ["VeryHigh"] = "Very High",
+                ["Medium"] = "Balanced",
+                ["Fast"] = "Crisp",
+                ["Instant"] = "Direct",
+                ["Low"] = "Short",
+                ["High"] = "Long",
+                ["VeryHigh"] = "Extended",
                 ["Subtle"] = "Subtle",
                 ["Strong"] = "Strong",
-                ["VeryStrong"] = "Very Strong",
+                ["VeryStrong"] = "Very strong",
                 ["Maximum"] = "Maximum",
 
-                // Exceptions
-                ["ExcludedApps"] = "Excluded Apps",
-                ["NoAppsExcluded"] = "No apps excluded",
-                ["AppsExcluded"] = "{0} app(s) excluded",
-                ["Manage"] = "Manage",
+                ["ExcludedApps"] = "Bypassed processes",
+                ["NoAppsExcluded"] = "No applications bypassed",
+                ["AppsExcluded"] = "{0} processes bypassed",
+                ["Manage"] = "CONFIGURE",
+                ["ManageTooltip"] = "Choose applications that keep native wheel behavior",
 
-                // Running Apps Dialog
-                ["RunningApps"] = "Running Apps",
-                ["SearchApps"] = "Search apps...",
-                ["ToggleExcludeHint"] = "ON = smooth scroll enabled, OFF = disabled",
+                ["RunningApps"] = "ACTIVE PROCESSES",
+                ["SearchApps"] = "Filter by process or window title...",
+                ["ToggleExcludeHint"] = "Set unit status to OFF to retain native Windows wheel scrolling.",
+                ["BackgroundProcess"] = "Background process",
+                ["Refresh"] = "RESCAN",
 
-                // Footer
-                ["MadeBy"] = "Made by rainaku",
+                ["TrayOpen"] = "Open HUD terminal",
+                ["TrayToggle"] = "Toggle smooth scroll",
+                ["TrayExit"] = "Terminate Scroll-V",
+
+                ["MadeBy"] = "UNIT DEVELOPER: W00TDEV"
             }
         };
 
         public string Get(string key)
         {
-            if (_strings.TryGetValue(_currentLanguage, out var langStrings))
+            if (_strings.TryGetValue(_currentLanguage, out var langStrings) &&
+                langStrings.TryGetValue(key, out var value))
             {
-                if (langStrings.TryGetValue(key, out var value))
-                    return value;
+                return value;
             }
             return key;
         }

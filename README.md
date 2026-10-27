@@ -9,13 +9,13 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/rainaku/Scroll-V/releases">
-    <img src="https://img.shields.io/github/v/release/rainaku/Scroll-V?style=for-the-badge&color=8B5CF6&logo=github" alt="Latest Release">
+  <a href="https://github.com/w00tdev/Scroll-V/releases">
+    <img src="https://img.shields.io/github/v/release/w00tdev/Scroll-V?style=for-the-badge&color=8B5CF6&logo=github" alt="Latest Release">
   </a>
   <img src="https://img.shields.io/badge/platform-Windows-lightgrey?style=for-the-badge&logo=windows" alt="Platform">
   <img src="https://img.shields.io/badge/.NET-8.0-purple?style=for-the-badge&logo=dotnet" alt="Framework">
   <a href="LICENSE">
-    <img src="https://img.shields.io/github/license/rainaku/Scroll-V?style=for-the-badge" alt="License">
+    <img src="https://img.shields.io/github/license/w00tdev/Scroll-V?style=for-the-badge" alt="License">
   </a>
 </p>
 
@@ -47,7 +47,7 @@
 - [.NET 8 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/8.0)
 
 ### Installation
-1. Download `Scroll-V.zip` from [Releases](https://github.com/rainaku/Scroll-V/releases)
+1. Download `Scroll-V.zip` from [Releases](https://github.com/w00tdev/Scroll-V/releases)
 2. Extract to any folder
 3. Run `Scroll-V.exe`
 4. (Optional) Enable "Start with Windows" in settings
@@ -134,8 +134,9 @@ MIT License - Feel free to use, modify, and distribute.
 
 ---
 
-**Made with ❤️ by [rainaku](https://rainaku.id.vn)**
+**Made with ❤️ by [w00tdev](https://w00tdev.id.vn)**
 
 [![Facebook](https://img.shields.io/badge/Facebook-1877F2?logo=facebook&logoColor=white)](https://www.facebook.com/rain.107/)
-[![GitHub](https://img.shields.io/badge/GitHub-181717?logo=github&logoColor=white)](https://github.com/rainaku/Scroll-V)
-[![Website](https://img.shields.io/badge/Website-FF7139?logo=firefox&logoColor=white)](https://rainaku.id.vn)
+[![GitHub](https://img.shields.io/badge/GitHub-181717?logo=github&logoColor=white)](https://github.com/w00tdev/Scroll-V)
+[![Website](https://img.shields.io/badge/Website-FF7139?logo=firefox&logoColor=white)](https://w00tdev.id.vn)
+

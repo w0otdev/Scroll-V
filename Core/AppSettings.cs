@@ -1,14 +1,11 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Text.Json;
-using System.Text.Json.Serialization;
 
 namespace ScrollV.Core
 {
-    /// <summary>
-    /// Application settings with per-app customization support
-    /// </summary>
     public class AppSettings
     {
         private static readonly string SettingsPath = Path.Combine(
@@ -17,39 +14,29 @@ namespace ScrollV.Core
             "settings.json"
         );
 
-        // Global settings
         public bool Enabled { get; set; } = true;
         public bool StartWithWindows { get; set; } = true;
-        public bool StartMinimized { get; set; } = true;
-        public bool ShowNotifications { get; set; } = true;
-        public string Language { get; set; } = "vi"; // vi or en
+        public string Language { get; set; } = "vi";
 
-        // Scroll settings
-        public double SmoothnessFactor { get; set; } = 0.05; // Very Smooth
+        public double SmoothnessFactor { get; set; } = 0.05;
         public double AccelerationFactor { get; set; } = 1.2;
-        public double FrictionFactor { get; set; } = 0.97; // Very High Momentum
-        public double MomentumFactor { get; set; } = 3.2; // Strong Glide (1.0 - 5.0)
+        public double FrictionFactor { get; set; } = 0.97;
+        public double MomentumFactor { get; set; } = 3.2;
         public EasingType EasingFunction { get; set; } = EasingType.EaseOutQuad;
         public bool UseAcceleration { get; set; } = true;
-        public double ScrollMultiplier { get; set; } = 1.4; // 1.4x Speed
+        public double ScrollMultiplier { get; set; } = 1.4;
 
-        // Per-application settings
-        public Dictionary<string, AppSpecificSettings> PerAppSettings { get; set; } = new();
-
-        // Excluded applications
-        // Note: IDM (Internet Download Manager) has its own mouse hook that conflicts with smooth scroll
         public List<string> ExcludedApps { get; set; } = new()
         {
             "vlc",
             "mpc-hc64",
             "mpc-hc",
-            "PotPlayerMini64",
+            "potplayermini64",
             "photoshop",
             "illustrator",
-            "idman",           // IDM main process
-            "IDMan",           // IDM alternate casing
-            "idmsettings",     // IDM settings
-            "IEMonitor"        // IDM IE Monitor
+            "idman",
+            "idmsettings",
+            "iemonitor"
         };
 
         private static readonly JsonSerializerOptions JsonOptions = new()
@@ -65,12 +52,14 @@ namespace ScrollV.Core
                 if (File.Exists(SettingsPath))
                 {
                     string json = File.ReadAllText(SettingsPath);
-                    return JsonSerializer.Deserialize<AppSettings>(json, JsonOptions) ?? new AppSettings();
+                    var settings = JsonSerializer.Deserialize<AppSettings>(json, JsonOptions) ?? new AppSettings();
+                    settings.NormalizeExcludedApps();
+                    return settings;
                 }
             }
-            catch (Exception ex)
+            catch
             {
-                Console.WriteLine($"Error loading settings: {ex.Message}");
+                // Fall back to defaults on corrupted settings file
             }
 
             return new AppSettings();
@@ -86,38 +75,42 @@ namespace ScrollV.Core
                     Directory.CreateDirectory(directory);
                 }
 
+                NormalizeExcludedApps();
                 string json = JsonSerializer.Serialize(this, JsonOptions);
                 File.WriteAllText(SettingsPath, json);
             }
-            catch (Exception ex)
+            catch
             {
-                Console.WriteLine($"Error saving settings: {ex.Message}");
+                // Ignore transient I/O errors
             }
+        }
+
+        public void NormalizeExcludedApps()
+        {
+            if (ExcludedApps == null)
+            {
+                ExcludedApps = new List<string>();
+                return;
+            }
+
+            ExcludedApps = ExcludedApps
+                .Where(a => !string.IsNullOrWhiteSpace(a))
+                .Select(a => a.Trim().ToLowerInvariant())
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
         }
 
         public bool IsAppExcluded(string processName)
         {
-            return ExcludedApps.Contains(processName.ToLowerInvariant());
-        }
-
-        public AppSpecificSettings? GetAppSettings(string processName)
-        {
-            if (PerAppSettings.TryGetValue(processName.ToLowerInvariant(), out var settings))
-            {
-                return settings;
-            }
-            return null;
-        }
-
-        public void SetAppSettings(string processName, AppSpecificSettings settings)
-        {
-            PerAppSettings[processName.ToLowerInvariant()] = settings;
+            if (string.IsNullOrWhiteSpace(processName)) return false;
+            return ExcludedApps.Contains(processName.Trim(), StringComparer.OrdinalIgnoreCase);
         }
 
         public void AddExcludedApp(string processName)
         {
-            string name = processName.ToLowerInvariant();
-            if (!ExcludedApps.Contains(name))
+            if (string.IsNullOrWhiteSpace(processName)) return;
+            string name = processName.Trim().ToLowerInvariant();
+            if (!IsAppExcluded(name))
             {
                 ExcludedApps.Add(name);
             }
@@ -125,16 +118,8 @@ namespace ScrollV.Core
 
         public void RemoveExcludedApp(string processName)
         {
-            ExcludedApps.Remove(processName.ToLowerInvariant());
+            if (string.IsNullOrWhiteSpace(processName)) return;
+            ExcludedApps.RemoveAll(a => string.Equals(a, processName.Trim(), StringComparison.OrdinalIgnoreCase));
         }
-    }
-
-    public class AppSpecificSettings
-    {
-        public bool Enabled { get; set; } = true;
-        public double? SmoothnessFactor { get; set; }
-        public double? AccelerationFactor { get; set; }
-        public double? ScrollMultiplier { get; set; }
-        public EasingType? EasingFunction { get; set; }
     }
 }
